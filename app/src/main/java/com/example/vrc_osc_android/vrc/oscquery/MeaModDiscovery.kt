@@ -25,9 +25,12 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
     override var onOscServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
     override var onOscQueryServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
 
+    private var isDiscoveryActive = false
+
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(regType: String) {
-            Log.d(TAG, "Service discovery started")
+            Log.d(TAG, "Service discovery started for $regType")
+            isDiscoveryActive = true
         }
 
         override fun onServiceFound(service: NsdServiceInfo) {
@@ -45,14 +48,16 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
         override fun onDiscoveryStopped(serviceType: String) {
             Log.i(TAG, "Discovery stopped: $serviceType")
+            isDiscoveryActive = false
         }
 
         override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-            Log.e(TAG, "Discovery failed: Error code: $errorCode")
+            Log.e(TAG, "Discovery failed to start for $serviceType: Error code: $errorCode")
+            isDiscoveryActive = false
         }
 
         override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-            Log.e(TAG, "Discovery failed: Error code: $errorCode")
+            Log.e(TAG, "Discovery failed to stop for $serviceType: Error code: $errorCode")
         }
     }
 
@@ -63,8 +68,27 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
     private fun startDiscovery() {
         serviceScope.launch {
             withContext(Dispatchers.IO) {
-                nsdManager.discoverServices(SERVICE_TYPE_OSC, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-                nsdManager.discoverServices(SERVICE_TYPE_OSCQUERY, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                if (isDiscoveryActive) {
+                    stopDiscovery()
+                }
+                try {
+                    nsdManager.discoverServices(SERVICE_TYPE_OSC, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                    nsdManager.discoverServices(SERVICE_TYPE_OSCQUERY, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                } catch (e: IllegalArgumentException) {
+                    Log.e(TAG, "Failed to start discovery: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun stopDiscovery() {
+        serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    nsdManager.stopServiceDiscovery(discoveryListener)
+                } catch (e: IllegalArgumentException) {
+                    Log.e(TAG, "Failed to stop discovery: ${e.message}")
+                }
             }
         }
     }
@@ -117,13 +141,7 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
     }
 
     override fun refreshServices() {
-        serviceScope.launch {
-            withContext(Dispatchers.IO) {
-                // Re-initiate discovery
-                nsdManager.stopServiceDiscovery(discoveryListener)
-                startDiscovery()
-            }
-        }
+        startDiscovery()
     }
 
     override fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = oscQueryServices
@@ -171,10 +189,6 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
     }
 
     override fun close() {
-        serviceScope.launch {
-            withContext(Dispatchers.IO) {
-                nsdManager.stopServiceDiscovery(discoveryListener)
-            }
-        }
+        stopDiscovery()
     }
 }
