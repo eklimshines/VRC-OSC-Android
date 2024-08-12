@@ -1,134 +1,179 @@
 package com.example.vrc_osc_android.vrc.oscquery
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.logging.Logger
-import kotlin.time.Duration
+import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-class MeaModDiscovery(private val logger: Logger? = null) : IDiscovery {
-    private lateinit var discovery: ServiceDiscovery
-    private lateinit var mdns: MulticastService
+class MeaModDiscovery(private val context: Context) : IDiscovery {
+    companion object {
+        private const val TAG = "MeaModDiscovery"
+        private const val SERVICE_TYPE_OSC = "_osc._udp."
+        private const val SERVICE_TYPE_OSCQUERY = "_oscjson._tcp."
+    }
 
-    private val oscQueryServices = ConcurrentHashMap.newKeySet<OSCQueryServiceProfile>()
-    private val oscServices = ConcurrentHashMap.newKeySet<OSCQueryServiceProfile>()
+    private val nsdManager: NsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
+    private val serviceScope = CoroutineScope(Dispatchers.Default)
+
+    private val oscQueryServices = mutableSetOf<OSCQueryServiceProfile>()
+    private val oscServices = mutableSetOf<OSCQueryServiceProfile>()
 
     override var onOscServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
     override var onOscQueryServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
-    var onOscServiceRemoved: ((String) -> Unit)? = null
-    var onOscQueryServiceRemoved: ((String) -> Unit)? = null
 
-    private val profiles = ConcurrentHashMap<OSCQueryServiceProfile, ServiceProfile>()
-
-    init {
-        mdns = MulticastService().apply {
-            useIpv6 = false
-            ignoreDuplicateMessages = true
+    private val discoveryListener = object : NsdManager.DiscoveryListener {
+        override fun onDiscoveryStarted(regType: String) {
+            Log.d(TAG, "Service discovery started")
         }
 
-        discovery = ServiceDiscovery(mdns)
+        override fun onServiceFound(service: NsdServiceInfo) {
+            Log.d(TAG, "Service discovered: ${service.serviceName}")
+            when (service.serviceType) {
+                SERVICE_TYPE_OSC -> resolveService(service, OSCQueryServiceProfile.ServiceType.OSC)
+                SERVICE_TYPE_OSCQUERY -> resolveService(service, OSCQueryServiceProfile.ServiceType.OSCQuery)
+            }
+        }
 
-        mdns.networkInterfaceDiscovered = { refreshServices() }
-        mdns.answerReceived = { sender, eventArgs -> onRemoteServiceInfo(sender, eventArgs) }
-        mdns.start()
+        override fun onServiceLost(service: NsdServiceInfo) {
+            Log.e(TAG, "Service lost: ${service.serviceName}")
+            removeService(service)
+        }
+
+        override fun onDiscoveryStopped(serviceType: String) {
+            Log.i(TAG, "Discovery stopped: $serviceType")
+        }
+
+        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+            Log.e(TAG, "Discovery failed: Error code: $errorCode")
+        }
+
+        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+            Log.e(TAG, "Discovery failed: Error code: $errorCode")
+        }
+    }
+
+    init {
+        startDiscovery()
+    }
+
+    private fun startDiscovery() {
+        serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                nsdManager.discoverServices(SERVICE_TYPE_OSC, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                nsdManager.discoverServices(SERVICE_TYPE_OSCQUERY, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            }
+        }
+    }
+
+    private fun resolveService(service: NsdServiceInfo, type: OSCQueryServiceProfile.ServiceType) {
+        serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                nsdManager.resolveService(service, object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                        Log.e(TAG, "Resolve failed: ${serviceInfo.serviceName} Error code: $errorCode")
+                    }
+
+                    override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                        Log.d(TAG, "Resolve Succeeded. ${serviceInfo.serviceName}")
+                        val profile = OSCQueryServiceProfile(
+                            serviceInfo.serviceName,
+                            serviceInfo.host,
+                            serviceInfo.port,
+                            type
+                        )
+                        addService(profile)
+                    }
+                })
+            }
+        }
+    }
+
+    private fun addService(profile: OSCQueryServiceProfile) {
+        serviceScope.launch {
+            when (profile.serviceType) {
+                OSCQueryServiceProfile.ServiceType.OSC -> {
+                    oscServices.add(profile)
+                    onOscServiceAdded?.invoke(profile)
+                }
+                OSCQueryServiceProfile.ServiceType.OSCQuery -> {
+                    oscQueryServices.add(profile)
+                    onOscQueryServiceAdded?.invoke(profile)
+                }
+
+                else -> {}
+            }
+        }
+    }
+
+    private fun removeService(service: NsdServiceInfo) {
+        serviceScope.launch {
+            oscServices.removeIf { it.name == service.serviceName }
+            oscQueryServices.removeIf { it.name == service.serviceName }
+        }
+    }
+
+    override fun refreshServices() {
+        serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                // Re-initiate discovery
+                nsdManager.stopServiceDiscovery(discoveryListener)
+                startDiscovery()
+            }
+        }
     }
 
     override fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = oscQueryServices
 
     override fun getOSCServices(): Set<OSCQueryServiceProfile> = oscServices
 
-    override fun close() {
-        profiles.keys.forEach { unadvertise(it) }
-        discovery.close()
-        mdns.stop()
-    }
-
-    override fun refreshServices() {
-        mdns.sendQuery(OSCQueryService.localOscUdpServiceName)
-        mdns.sendQuery(OSCQueryService.localOscJsonServiceName)
-    }
-
     override fun advertise(profile: OSCQueryServiceProfile) {
-        val meaProfile = ServiceProfile(profile.name, profile.getServiceTypeString(), profile.port, listOf(profile.address))
-        discovery.advertise(meaProfile)
-        profiles[profile] = meaProfile
+        serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                val serviceInfo = NsdServiceInfo().apply {
+                    serviceName = profile.name
+                    serviceType = when (profile.serviceType) {
+                        OSCQueryServiceProfile.ServiceType.OSC -> SERVICE_TYPE_OSC
+                        OSCQueryServiceProfile.ServiceType.OSCQuery -> SERVICE_TYPE_OSCQUERY
+                        else -> {""}
+                    }
+                    port = profile.port
+                    host = profile.address
+                }
 
-        logger?.info("Advertising Service ${profile.name} of type ${profile.serviceType} on ${profile.port}")
+                nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, object : NsdManager.RegistrationListener {
+                    override fun onServiceRegistered(NsdServiceInfo: NsdServiceInfo) {
+                        Log.d(TAG, "Service registered: ${NsdServiceInfo.serviceName}")
+                    }
+
+                    override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                        Log.e(TAG, "Registration failed: ${serviceInfo.serviceName} Error code: $errorCode")
+                    }
+
+                    override fun onServiceUnregistered(arg0: NsdServiceInfo) {
+                        Log.d(TAG, "Service unregistered: ${arg0.serviceName}")
+                    }
+
+                    override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                        Log.e(TAG, "Unregistration failed: ${serviceInfo.serviceName} Error code: $errorCode")
+                    }
+                })
+            }
+        }
     }
 
     override fun unadvertise(profile: OSCQueryServiceProfile) {
-        profiles.remove(profile)?.let { meaProfile ->
-            discovery.unadvertise(meaProfile)
-            logger?.info("Unadvertising Service ${profile.name} of type ${profile.serviceType} on ${profile.port}")
-        }
+        // This method is left unimplemented as NsdManager doesn't provide a direct way to unregister a specific service
+        Log.w(TAG, "Unadvertise is not implemented in MeaModDiscovery")
     }
 
-    private fun onRemoteServiceInfo(sender: Any, eventArgs: MessageEventArgs) {
-        val response = eventArgs.message
-
-        try {
-            val hasMatch = response.answers.any { record ->
-                OSCQueryService.matchedNames.contains(record?.canonicalName)
-            }
-            if (!hasMatch) return
-
-            if (response.answers.any { OSCQueryService.matchedNames.contains(it.canonicalName) }) {
-                try {
-                    response.additionalRecords.filterIsInstance<SRVRecord>().forEach { record ->
-                        if (record.ttl == Duration.ZERO) {
-                            removeMatchedService(record)
-                        } else {
-                            addMatchedService(response, record)
-                        }
-                    }
-                } catch (e: Exception) {
-                    logger?.info("No SRV Records found in answer from ${eventArgs.remoteEndPoint}")
-                }
-            }
-        } catch (e: Exception) {
-            logger?.info("Could not parse answer from ${eventArgs.remoteEndPoint}: ${e.message}")
-        }
-    }
-
-    private fun addMatchedService(response: Message, srvRecord: SRVRecord) {
-        val port = srvRecord.port
-        val domainName = srvRecord.name.labels
-        val instanceName = domainName[0]
-
-        val serviceName = domainName.drop(1).joinToString(".")
-        val ips = response.additionalRecords.filterIsInstance<ARecord>().map { it.address }
-
-        val profile = ServiceProfile(instanceName, serviceName, srvRecord.port, ips)
-
-        when {
-            serviceName == OSCQueryService.localOscUdpServiceName && profile !in profiles.values -> {
-                if (oscServices.none { it.name == profile.instanceName }) {
-                    val p = OSCQueryServiceProfile(instanceName, ips.first(), port, OSCQueryServiceProfile.ServiceType.OSC)
-                    oscServices.add(p)
-                    onOscServiceAdded?.invoke(p)
-                }
-            }
-            serviceName == OSCQueryService.localOscJsonServiceName && profile !in profiles.values -> {
-                if (oscQueryServices.none { it.name == profile.instanceName }) {
-                    val p = OSCQueryServiceProfile(instanceName, ips.first(), port, OSCQueryServiceProfile.ServiceType.OSCQuery)
-                    oscQueryServices.add(p)
-                    onOscQueryServiceAdded?.invoke(p)
-                }
-            }
-        }
-    }
-
-    private fun removeMatchedService(srvRecord: SRVRecord) {
-        val domainName = srvRecord.name.labels
-        val instanceName = domainName[0]
-        val serviceName = domainName.drop(1).joinToString(".")
-
-        when (serviceName) {
-            OSCQueryService.localOscUdpServiceName -> {
-                oscServices.removeAll { it.name == instanceName }
-                onOscServiceRemoved?.invoke(instanceName)
-            }
-            OSCQueryService.localOscJsonServiceName -> {
-                oscQueryServices.removeAll { it.name == instanceName }
-                onOscQueryServiceRemoved?.invoke(instanceName)
+    override fun close() {
+        serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                nsdManager.stopServiceDiscovery(discoveryListener)
             }
         }
     }

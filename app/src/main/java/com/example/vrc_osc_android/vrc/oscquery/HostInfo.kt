@@ -5,7 +5,7 @@ import com.google.gson.annotations.SerializedName
 
 data class HostInfo(
     @SerializedName(Keys.NAME)
-    var name: String? = null,
+    var name: String = "",
 
     @SerializedName(Keys.EXTENSIONS)
     var extensions: MutableMap<String, Boolean> = mutableMapOf(
@@ -20,7 +20,7 @@ data class HostInfo(
     var oscIP: String? = null,
 
     @SerializedName(Keys.OSC_PORT)
-    var oscPort: Int = OSCQueryService.DefaultPortOsc,
+    var oscPort: Int = OSCQueryService.DEFAULT_PORT_OSC,
 
     @SerializedName(Keys.OSC_TRANSPORT)
     var oscTransport: String = Keys.OSC_TRANSPORT_UDP

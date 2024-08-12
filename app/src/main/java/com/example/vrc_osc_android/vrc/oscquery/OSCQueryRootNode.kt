@@ -1,5 +1,6 @@
 package com.example.vrc_osc_android.vrc.oscquery
 
+import android.util.Log
 import com.google.gson.Gson
 
 class OSCQueryRootNode : OSCQueryNode() {
@@ -22,11 +23,12 @@ class OSCQueryRootNode : OSCQueryNode() {
         if (parent?.contents == null) {
             parent?.contents = mutableMapOf()
         } else if (parent.contents?.containsKey(node.name) == true) {
-            OSCQueryService.logger.warning("Child node ${node.name} already exists on ${fullPath}, you need to remove the existing entry first")
+            Log.w(TAG, "Child node ${node.name} already exists on ${fullPath}, you need to remove the existing entry first")
             return null
         }
         // Add to contents
         parent?.contents?.put(node.name, node)
+
 
         // Todo: handle case where this full path already exists, but I don't think it should ever happen
         pathLookup[node.fullPath] = node
@@ -66,6 +68,7 @@ class OSCQueryRootNode : OSCQueryNode() {
     }
 
     companion object {
+        private const val TAG = "OSCQueryRootNode"
         fun fromString(json: String): OSCQueryRootNode {
             val gson = Gson()
             val tree = gson.fromJson(json, OSCQueryRootNode::class.java)

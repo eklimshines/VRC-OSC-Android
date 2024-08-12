@@ -2,151 +2,153 @@ package com.example.vrc_osc_android.vrc.oscquery
 
 import android.content.Context
 import android.util.Log
-import com.google.android.gms.common.api.Response
-import kotlinx.coroutines.*
+import okhttp3.Request
 import java.io.IOException
-import java.net.ServerSocket
-import java.net.Socket
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import java.io.File
 
 class OSCQueryHttpServer(
     private val context: Context,
-    private val oscQueryService: OSCQueryService,
-    private val logger: Logger
+    private val oscQueryService: OSCQueryService
 ) {
-    private var serverSocket: ServerSocket? = null
-    private var isRunning = false
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val client = OkHttpClient()
+    private var webSocket: WebSocket? = null
+    private var isProcessingHttp = false
 
-    private val preMiddleware = listOf(::hostInfoMiddleware)
-    private val middleware = mutableListOf<suspend (Request, Response, () -> Unit) -> Unit>()
-    private val postMiddleware = listOf(::faviconMiddleware, ::explorerMiddleware, ::rootNodeMiddleware)
+    private val preMiddleware = mutableListOf<suspend (Request) -> Boolean>()
+    private val middleware = mutableListOf<suspend (Request) -> Boolean>()
+    private val postMiddleware = mutableListOf<suspend (Request) -> Boolean>()
+
+    init {
+        preMiddleware.add(::hostInfoMiddleware)
+        postMiddleware.addAll(listOf(::faviconMiddleware, ::explorerMiddleware, ::rootNodeMiddleware))
+    }
 
     fun start() {
-        if (isRunning) return
-        isRunning = true
+        isProcessingHttp = true
+        val request = Request.Builder()
+            .url("ws://${oscQueryService.hostIP}:${oscQueryService.tcpPort}")
+            .build()
 
-        scope.launch {
-            try {
-                serverSocket = ServerSocket(oscQueryService.tcpPort)
-                logger.info("Server started on port ${oscQueryService.tcpPort}")
-
-                while (isRunning) {
-                    val socket = serverSocket?.accept() ?: break
-                    launch { handleClient(socket) }
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                CoroutineScope(Dispatchers.Default).launch {
+                    processRequest(text)
                 }
-            } catch (e: IOException) {
-                Log.e("", "Error starting server: ${e.message}")
             }
-        }
+        })
     }
 
-    private suspend fun handleClient(socket: Socket) {
-        withContext(Dispatchers.IO) {
-            try {
-                val request = Request(socket.getInputStream())
-                val response = Response(socket.getOutputStream())
-
-                runMiddleware(preMiddleware, request, response)
-                runMiddleware(middleware, request, response)
-                runMiddleware(postMiddleware, request, response)
-
-                response.send()
-            } catch (e: IOException) {
-                Log.e("", "Error handling client: ${e.message}")
-            } finally {
-                socket.close()
-            }
-        }
-    }
-
-    private suspend fun runMiddleware(
-        middlewareList: List<suspend (Request, Response, () -> Unit) -> Unit>,
-        request: Request,
-        response: Response
-    ) {
-        for (middleware in middlewareList) {
-            var next = false
-            middleware(request, response) { next = true }
-            if (!next) break
-        }
-    }
-
-    fun addMiddleware(middleware: suspend (Request, Response, () -> Unit) -> Unit) {
+    fun addMiddleware(middleware: suspend (Request) -> Boolean) {
         this.middleware.add(middleware)
     }
 
-    private suspend fun hostInfoMiddleware(request: Request, response: Response, next: () -> Unit) {
-        if (!request.url.contains(Attributes.HOST_INFO)) {
-            next()
-            return
+    private suspend fun processRequest(requestText: String) {
+        if (!isProcessingHttp) return
+
+        val request = Request.Builder().url(requestText).build()
+
+        for (mw in preMiddleware) {
+            if (!mw(request)) return
+        }
+
+        for (mw in middleware) {
+            if (!mw(request)) return
+        }
+
+        for (mw in postMiddleware) {
+            if (!mw(request)) return
+        }
+    }
+
+    private suspend fun hostInfoMiddleware(request: Request): Boolean {
+        if (!request.url.toString().contains(Attributes.HOST_INFO)) {
+            return true
         }
 
         try {
             val hostInfoString = oscQueryService.hostInfo.toString()
-            response.headers["pragma"] = "no-cache"
-            response.contentType = "application/json"
-            response.write(hostInfoString)
+            sendResponse(hostInfoString, "application/json")
         } catch (e: Exception) {
-            Log.e("", "Could not construct and send Host Info: ${e.message}")
+            Log.e(TAG, "Could not construct and send Host Info: ${e.message}")
         }
+        return false
     }
 
-    private suspend fun explorerMiddleware(request: Request, response: Response, next: () -> Unit) {
-        if (!request.url.contains(Attributes.EXPLORER)) {
-            next()
-            return
+    private suspend fun explorerMiddleware(request: Request): Boolean {
+        if (!request.url.query?.contains(Attributes.EXPLORER)!!) {
+            return true
         }
 
-        try {
-            val explorerHtml = context.assets.open("OSCQueryExplorer.html").bufferedReader().use { it.readText() }
-            response.contentType = "text/html"
-            response.write(explorerHtml)
-        } catch (e: IOException) {
-            Log.e("", "Cannot find OSCQueryExplorer.html in assets: ${e.message}")
-            next()
+        val path = File(context.filesDir, "Resources/OSCQueryExplorer.html")
+        if (!path.exists()) {
+            Log.e(TAG, "Cannot find file at ${path.absolutePath} to serve.")
+            return true
         }
+
+        serveStaticFile(path, "text/html")
+        return false
     }
 
-    private suspend fun faviconMiddleware(request: Request, response: Response, next: () -> Unit) {
-        if (!request.url.contains("favicon.ico")) {
-            next()
-            return
+    private suspend fun faviconMiddleware(request: Request): Boolean {
+        if (!request.url.toString().contains("favicon.ico")) {
+            return true
         }
 
-        try {
-            val favicon = context.assets.open("favicon.ico").use { it.readBytes() }
-            response.contentType = "image/x-icon"
-            response.write(favicon)
-        } catch (e: IOException) {
-            Log.e("", "Cannot find favicon.ico in assets: ${e.message}")
-            next()
+        val path = File(context.filesDir, "Resources/favicon.ico")
+        if (!path.exists()) {
+            Log.e(TAG, "Cannot find file at ${path.absolutePath} to serve.")
+            return true
         }
+
+        serveStaticFile(path, "image/x-icon")
+        return false
     }
 
-    private suspend fun rootNodeMiddleware(request: Request, response: Response, next: () -> Unit) {
-        val path = request.url.substringAfter("/", "")
+    private suspend fun rootNodeMiddleware(request: Request): Boolean {
+        val path = request.url.encodedPath
         val matchedNode = oscQueryService.rootNode.getNodeWithPath(path)
 
         if (matchedNode == null) {
-            response.status = 404
-            response.write("OSC Path not found")
-            return
+            sendResponse("OSC Path not found", "text/plain", 404)
+            return false
         }
 
         try {
             val stringResponse = matchedNode.toString()
-            response.headers["pragma"] = "no-cache"
-            response.contentType = "application/json"
-            response.write(stringResponse)
+            sendResponse(stringResponse, "application/json")
         } catch (e: Exception) {
-            Log.e("", "Could not serialize node: ${e.message}")
+            Log.e(TAG, "Could not serialize node ${matchedNode.name}: ${e.message}")
+        }
+
+        return false
+    }
+
+    private fun sendResponse(content: String, contentType: String, statusCode: Int = 200) {
+        webSocket?.send("{\"statusCode\": $statusCode, \"contentType\": \"$contentType\", \"content\": \"$content\"}")
+    }
+
+    private fun serveStaticFile(file: File, contentType: String) {
+        try {
+            val content = file.readText()
+            sendResponse(content, contentType)
+        } catch (e: IOException) {
+            Log.e(TAG, "Error serving static file: ${e.message}")
         }
     }
 
     fun stop() {
-        isRunning = false
-        serverSocket?.close()
-        scope.cancel()
-        logger.info("Server stopped")
+        isProcessingHttp = false
+        webSocket?.close(1000, "Server shutting down")
+        client.dispatcher.executorService.shutdown()
+    }
+
+    companion object {
+        private const val TAG = "OSCQueryHttpServer"
     }
 }

@@ -9,8 +9,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.vrc_osc_android.ui.theme.VRCOSCAndroidTheme
+import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,6 +28,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        val service = OSCQueryService(baseContext, "MyServer", 8080, 9000)
     }
 }
 

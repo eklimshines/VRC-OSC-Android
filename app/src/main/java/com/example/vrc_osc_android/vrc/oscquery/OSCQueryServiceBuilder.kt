@@ -1,9 +1,10 @@
 package com.example.vrc_osc_android.vrc.oscquery
 
+import android.content.Context
 import java.net.InetAddress
 
-class OSCQueryServiceBuilder {
-    private val service = OSCQueryService()
+class OSCQueryServiceBuilder(private val context: Context) {
+    private val service = OSCQueryService(context)
     private var customStartup = false
 
     fun build(): OSCQueryService {
@@ -16,7 +17,7 @@ class OSCQueryServiceBuilder {
     fun withDefaults(): OSCQueryServiceBuilder {
         customStartup = true
         startHttpServer()
-        withDiscovery(MeaModDiscovery())
+        withDiscovery(MeaModDiscovery(context))
         advertiseOSCQuery()
         advertiseOSC()
         return this
@@ -61,13 +62,7 @@ class OSCQueryServiceBuilder {
         return this
     }
 
-    fun withLogger(logger: Logger): OSCQueryServiceBuilder {
-        customStartup = true
-        OSCQueryService.logger = logger
-        return this
-    }
-
-    fun withMiddleware(middleware: suspend (Request, () -> Unit) -> Unit): OSCQueryServiceBuilder {
+    fun withMiddleware(middleware: suspend (okhttp3.Request) -> Boolean): OSCQueryServiceBuilder {
         customStartup = true
         service.addMiddleware(middleware)
         return this
@@ -79,14 +74,12 @@ class OSCQueryServiceBuilder {
         return this
     }
 
-    fun addListenerForServiceType(
-        listener: (OSCQueryServiceProfile) -> Unit,
-        type: OSCQueryServiceProfile.ServiceType
-    ): OSCQueryServiceBuilder {
+    fun addListenerForServiceType(listener: (OSCQueryServiceProfile) -> Unit,
+                                  type: OSCQueryServiceProfile.ServiceType): OSCQueryServiceBuilder {
         customStartup = true
         when (type) {
-            OSCQueryServiceProfile.ServiceType.OSC -> service.onOscServiceAdded += listener
-            OSCQueryServiceProfile.ServiceType.OSCQuery -> service.onOscQueryServiceAdded += listener
+            OSCQueryServiceProfile.ServiceType.OSC -> service.onOscServiceAdded = listener
+            OSCQueryServiceProfile.ServiceType.OSCQuery -> service.onOscQueryServiceAdded = listener
             else -> {}
         }
         return this
@@ -105,4 +98,4 @@ class OSCQueryServiceBuilder {
     }
 }
 
-data class Request(val data: String)
+//data class Request(val data: String)

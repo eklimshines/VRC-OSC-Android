@@ -5,7 +5,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonSerializer
 
-class OSCQueryNode {
+open class OSCQueryNode {
     // Empty Constructor for Json Serialization
     constructor()
 
@@ -14,10 +14,10 @@ class OSCQueryNode {
     }
 
     @SerializedName(Attributes.DESCRIPTION)
-    var description: String? = null
+    var description: String = ""
 
     @SerializedName(Attributes.FULL_PATH)
-    var fullPath: String? = null
+    var fullPath: String = ""
 
     @SerializedName(Attributes.ACCESS)
     var access: Attributes.AccessValues? = null
@@ -26,7 +26,7 @@ class OSCQueryNode {
     var contents: MutableMap<String, OSCQueryNode>? = null
 
     @SerializedName(Attributes.TYPE)
-    var oscType: String? = null
+    var oscType: String= ""
 
     @SerializedName(Attributes.VALUE)
     var value: Array<Any>? = null
