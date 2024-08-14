@@ -1,4 +1,4 @@
-package com.example.vrc_osc_android
+package com.example.vrc_osc_android.sender
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize

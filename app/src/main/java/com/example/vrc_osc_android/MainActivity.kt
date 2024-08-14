@@ -10,10 +10,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.vrc_osc_android.receiver.OSCQueryApp
+import com.example.vrc_osc_android.sender.OSCQueryServiceScreen
+import com.example.vrc_osc_android.sender.OSCQueryServiceViewModel
 import com.example.vrc_osc_android.ui.theme.VRCOSCAndroidTheme
-import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,8 +27,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val viewModel = remember { OSCQueryServiceViewModel(baseContext) }
-                    OSCQueryServiceScreen(viewModel)
+                    //sender
+                    //val viewModel = remember { OSCQueryServiceViewModel(baseContext) }
+                    //OSCQueryServiceScreen(viewModel)
+
+                    //receiver
+                    OSCQueryApp()
                 }
             }
         }

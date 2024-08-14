@@ -1,4 +1,4 @@
-package com.example.vrc_osc_android
+package com.example.vrc_osc_android.sender
 
 import android.content.Context
 import android.util.Log
