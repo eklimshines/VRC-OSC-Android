@@ -10,6 +10,7 @@ object Attributes {
 
     private val oscTypeLookup = mapOf(
         Int::class.java to "i",
+        Integer::class.java to "i",
         Long::class.java to "h",
         Float::class.java to "f",
         Double::class.java to "d",
@@ -17,7 +18,7 @@ object Attributes {
         Char::class.java to "c",
         Array::class.java to "[,]",
         ByteArray::class.java to "b",
-        Boolean::class.java to "T"
+        Boolean::class.java to "T",
     )
 
     @Deprecated("Please use OSCTypeFor(clazz: Class<*>, oscType: (String) -> Unit) instead", ReplaceWith("OSCTypeFor(clazz) { it }"))
