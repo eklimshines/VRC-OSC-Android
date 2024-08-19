@@ -28,14 +28,19 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     //sender
-                    //val viewModel = remember { OSCQueryServiceViewModel(baseContext) }
-                    //OSCQueryServiceScreen(viewModel)
+                    val viewModel = remember { OSCQueryServiceViewModel(baseContext) }
+                    OSCQueryServiceScreen(viewModel)
 
                     //receiver
-                    OSCQueryApp()
+                    //OSCQueryApp()
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        //viewModel
     }
 }
 

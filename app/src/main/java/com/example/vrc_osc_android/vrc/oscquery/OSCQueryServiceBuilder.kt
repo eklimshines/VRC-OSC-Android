@@ -1,6 +1,7 @@
 package com.example.vrc_osc_android.vrc.oscquery
 
 import android.content.Context
+import fi.iki.elonen.NanoHTTPD
 import java.net.InetAddress
 
 class OSCQueryServiceBuilder(private val context: Context) {
@@ -62,7 +63,7 @@ class OSCQueryServiceBuilder(private val context: Context) {
         return this
     }
 
-    fun withMiddleware(middleware: suspend (okhttp3.Request) -> Boolean): OSCQueryServiceBuilder {
+    fun withMiddleware(middleware: suspend (NanoHTTPD.IHTTPSession) -> NanoHTTPD.Response?): OSCQueryServiceBuilder {
         customStartup = true
         service.addMiddleware(middleware)
         return this

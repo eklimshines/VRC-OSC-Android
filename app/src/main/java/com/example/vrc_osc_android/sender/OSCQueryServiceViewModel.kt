@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.vrc_osc_android.vrc.oscquery.Attributes
 import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
+import com.example.vrc_osc_android.vrc.oscquery.OSCQueryServiceBuilder
 import kotlinx.coroutines.launch
 import java.util.Random
 
@@ -25,10 +26,18 @@ class OSCQueryServiceViewModel(private val context: Context) : ViewModel() {
     private val wordGenerator = RandomWordGenerator()
 
     init {
-        val name = "ExampleService2"
+        val name = "MyOSCQueryService"
         val tcpPort = 8000
         val oscPort = 9000
         _service = OSCQueryService(context, name, tcpPort, oscPort)
+        /*
+        _service = OSCQueryServiceBuilder(context)
+            .withServiceName(name)
+            .withTcpPort(tcpPort)
+            .withUdpPort(oscPort)
+            .build()
+
+         */
         generateParams(10)
     }
 
@@ -63,4 +72,8 @@ class OSCQueryServiceViewModel(private val context: Context) : ViewModel() {
     }
 
     fun getParamCount() = _intParams.size
+
+    fun dispose() {
+        _service.dispose()
+    }
 }

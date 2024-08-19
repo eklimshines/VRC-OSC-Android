@@ -8,23 +8,28 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
 import java.net.Socket
+import fi.iki.elonen.NanoHTTPD
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import java.net.NetworkInterface
+import java.util.Collections
+import java.util.Locale
 
-class OSCQueryService @Deprecated("Use the Fluent Interface instead")
-constructor(
+class OSCQueryService(
     private val context: Context,
     serverName: String = DEFAULT_SERVER_NAME,
     httpPort: Int = DEFAULT_PORT_HTTP,
     oscPort: Int = DEFAULT_PORT_OSC,
-    vararg middleware: suspend (okhttp3.Request) -> Boolean
+    vararg middleware: suspend (NanoHTTPD.IHTTPSession) -> NanoHTTPD.Response?
 ) {
     companion object {
         const val DEFAULT_PORT_HTTP = 8060
         const val DEFAULT_PORT_OSC = 9000
-        const val DEFAULT_SERVER_NAME = "OSCQueryService"
+        const val DEFAULT_SERVER_NAME = "OSCQueryServiceTest1"
         const val TAG = "OSCQueryService"
 
-        val LOCAL_OSC_UDP_SERVICE_NAME = "${Attributes.SERVICE_OSC_UDP}.local"
-        val LOCAL_OSC_JSON_SERVICE_NAME = "${Attributes.SERVICE_OSCJSON_TCP}.local"
+        val LOCAL_OSC_UDP_SERVICE_NAME = "${Attributes.SERVICE_OSC_UDP}"
+        val LOCAL_OSC_JSON_SERVICE_NAME = "${Attributes.SERVICE_OSCJSON_TCP}"
 
         val MATCHED_NAMES = setOf(LOCAL_OSC_UDP_SERVICE_NAME, LOCAL_OSC_JSON_SERVICE_NAME)
     }
@@ -40,23 +45,18 @@ constructor(
             field = value
             hostInfo.name = value
         }
-    var hostIP: InetAddress = InetAddress.getLoopbackAddress()
-    var oscIP: InetAddress = InetAddress.getLoopbackAddress()
+    var hostIP: InetAddress = InetAddress.getByName("127.0.0.1") //InetAddress.getLoopbackAddress()
+    var oscIP: InetAddress = InetAddress.getByName("127.0.0.1") //InetAddress.getLoopbackAddress()
 
     private lateinit var http: OSCQueryHttpServer
-    private val serviceScope = CoroutineScope(Dispatchers.Default)
+    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private var _discovery: IDiscovery? = null
-    private val discovery: IDiscovery
-        get() {
-            if (_discovery == null) {
-                Log.w(TAG, "Creating default MeaModDiscovery")
-                setDiscovery(MeaModDiscovery(context))
-            }
-            return _discovery!!
-        }
+    private val discovery: IDiscovery by lazy {
+        MeaModDiscovery(context)
+    }
 
-    public val hostInfo: HostInfo by lazy {
+    val hostInfo: HostInfo by lazy {
         HostInfo(
             name = serverName,
             oscPort = oscPort,
@@ -64,7 +64,7 @@ constructor(
         )
     }
 
-    public val rootNode: OSCQueryRootNode by lazy {
+    val rootNode: OSCQueryRootNode by lazy {
         buildRootNode()
     }
 
@@ -74,7 +74,7 @@ constructor(
                 socket.localAddress
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to get local IP, using loopback address", e)
+            Log.w(TAG, "Failed to get local IP, using loopback address: ${e.message}")
             InetAddress.getLoopbackAddress()
         }
     }
@@ -83,15 +83,17 @@ constructor(
     var onOscQueryServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
 
     init {
-        initialize(serverName)
-        startOSCQueryService(serverName, httpPort, *middleware)
-        if (oscPort != DEFAULT_PORT_OSC) {
-            advertiseOSCService(serverName, oscPort)
+        serviceScope.launch {
+            initialize(serverName)
+            startOSCQueryService(serverName, httpPort, *middleware)
+            if (oscPort != DEFAULT_PORT_OSC) {
+                advertiseOSCService(serverName, oscPort)
+            }
+            refreshServices()
         }
-        refreshServices()
     }
 
-    fun addMiddleware(middleware: suspend (okhttp3.Request) -> Boolean) {
+    fun addMiddleware(middleware: suspend (NanoHTTPD.IHTTPSession) -> NanoHTTPD.Response?) {
         http.addMiddleware(middleware)
     }
 
@@ -104,10 +106,44 @@ constructor(
     fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = discovery.getOSCQueryServices()
     fun getOSCServices(): Set<OSCQueryServiceProfile> = discovery.getOSCServices()
 
+    fun getIPAddress(useIPv4: Boolean = true): String {
+        try {
+            val interfaces: List<NetworkInterface> = Collections.list(NetworkInterface.getNetworkInterfaces())
+            for (intf in interfaces) {
+                val addrs: List<InetAddress> = Collections.list(intf.inetAddresses)
+                for (addr in addrs) {
+                    if (!addr.isLoopbackAddress) {
+                        val sAddr = addr.hostAddress
+                        val isIPv4 = sAddr.indexOf(':') < 0
+
+                        if (useIPv4) {
+                            if (isIPv4)
+                                return sAddr
+                        } else {
+                            if (!isIPv4) {
+                                val delim = sAddr.indexOf('%') // drop ip6 zone suffix
+                                return if (delim < 0) sAddr.uppercase(Locale.getDefault()) else sAddr.substring(0, delim).uppercase(Locale.getDefault())
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (ex: Exception) {
+            // 예외 처리
+        }
+        return ""
+    }
+
     fun startHttpServer() {
         serviceScope.launch {
             withContext(Dispatchers.IO) {
-                http = OSCQueryHttpServer(context, this@OSCQueryService)
+                try {
+                    Log.e(TAG, "startHttpServer: ${hostIP.hostName}, ${hostIP.hostAddress}, ${hostIP}")
+                    http = OSCQueryHttpServer(context, this@OSCQueryService)
+                    http.start()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to start HTTP server: ${e.message}")
+                }
             }
         }
     }
@@ -209,17 +245,21 @@ constructor(
                 discovery.close()
             }
         }
+        serviceScope.cancel()
     }
 
-    private fun initialize(serverName: String = DEFAULT_SERVER_NAME) {
-        this.serverName = serverName
-        setDiscovery(MeaModDiscovery(context))
+    private suspend fun initialize(serverName: String = DEFAULT_SERVER_NAME) = withContext(Dispatchers.Default) {
+        this@OSCQueryService.serverName = serverName
+        setDiscovery(discovery)
     }
 
-    private fun startOSCQueryService(serverName: String, httpPort: Int = -1, vararg middleware: suspend (okhttp3.Request) -> Boolean) {
+    fun startOSCQueryService(serverName: String, httpPort: Int = -1, vararg middleware: suspend (NanoHTTPD.IHTTPSession) -> NanoHTTPD.Response?) {
         this.serverName = serverName
+
         tcpPort = if (httpPort == -1) Extensions.getAvailableTcpPort() else httpPort
+
         middleware.forEach { addMiddleware(it) }
+
         advertiseOSCQueryService(serverName, tcpPort)
         startHttpServer()
     }
