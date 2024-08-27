@@ -64,6 +64,7 @@ dependencies {
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2")
     implementation ("com.squareup.okhttp3:okhttp:4.9.1")
     implementation ("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("org.testng:testng:6.9.6")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

@@ -1,5 +1,8 @@
 package com.example.vrc_osc_android.vrc.oscquery
 
+import org.testng.Assert.assertEquals
+import org.testng.annotations.Test
+
 object Attributes {
     enum class AccessValues {
         NoValue,
@@ -61,4 +64,16 @@ object Attributes {
 
     // HTTPServer
     const val EXPLORER = "?explorer"
+
+    @Test
+    fun testOscType(){
+        assertEquals(OSCTypeFor(Int::class.java), "i")
+    }
+
+    @Test
+    fun testOscTypeCallback(){
+        var result = ""
+        OSCTypeFor(String::class.java) { result = it}
+        assertEquals(result, "s")
+    }
 }
