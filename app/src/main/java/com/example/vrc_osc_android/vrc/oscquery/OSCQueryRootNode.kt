@@ -2,6 +2,8 @@ package com.example.vrc_osc_android.vrc.oscquery
 
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonObject
 
 class OSCQueryRootNode : OSCQueryNode() {
     private var pathLookup: MutableMap<String, OSCQueryNode> = mutableMapOf("/" to this)
@@ -69,6 +71,32 @@ class OSCQueryRootNode : OSCQueryNode() {
             pathLookup[subNode.fullPath] = subNode
             subNode.contents?.let { addContents(subNode) }
         }
+    }
+
+    override fun toString(): String {
+        return serializeWithDepthLimit(this, maxDepth = 5)
+    }
+
+    fun serializeWithDepthLimit(node: OSCQueryNode, maxDepth: Int): String {
+        val gson = GsonBuilder().excludeFieldsWithoutExposeAnnotation().create()
+
+        fun JsonObject.addNodeProperties(node: OSCQueryNode, currentDepth: Int) {
+            addProperty(Attributes.FULL_PATH, node.fullPath)
+            addProperty(Attributes.DESCRIPTION, node.description)
+            addProperty(Attributes.ACCESS, node.access?.toString())
+            addProperty(Attributes.TYPE, node.oscType)
+            add(Attributes.VALUE, gson.toJsonTree(node.value))
+
+            if (currentDepth < maxDepth && node.contents != null) {
+                add(Attributes.CONTENTS, JsonObject().apply {
+                    node.contents?.forEach { (key, childNode) ->
+                        add(key, JsonObject().apply { addNodeProperties(childNode, currentDepth + 1) })
+                    }
+                })
+            }
+        }
+
+        return JsonObject().apply { addNodeProperties(node, 0) }.toString()
     }
 
     companion object {

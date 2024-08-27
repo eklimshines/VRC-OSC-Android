@@ -17,12 +17,19 @@ open class OSCQueryNode {
 
     @SerializedName(Attributes.CONTENTS)
     var contents: MutableMap<String, OSCQueryNode>? = null
+        set(value) {
+            field = value
+            field?.values?.forEach { it.parent = this }
+        }
 
     @SerializedName(Attributes.TYPE)
     var oscType: String? = null
 
     @SerializedName(Attributes.VALUE)
     var value: Array<Any>? = null
+
+    @Transient
+    var parent: OSCQueryNode? = null
 
     val parentPath: String
         get() {

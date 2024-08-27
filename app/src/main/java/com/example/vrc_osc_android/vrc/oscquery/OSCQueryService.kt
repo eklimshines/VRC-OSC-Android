@@ -45,8 +45,8 @@ class OSCQueryService(
             field = value
             hostInfo.name = value
         }
-    var hostIP: InetAddress = InetAddress.getByName("127.0.0.1") //InetAddress.getLoopbackAddress()
-    var oscIP: InetAddress = InetAddress.getByName("127.0.0.1") //InetAddress.getLoopbackAddress()
+    var hostIP: InetAddress = InetAddress.getByName("192.168.123.100") //InetAddress.getLoopbackAddress()
+    var oscIP: InetAddress = InetAddress.getByName("192.168.123.100") //InetAddress.getLoopbackAddress()
 
     private lateinit var http: OSCQueryHttpServer
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())

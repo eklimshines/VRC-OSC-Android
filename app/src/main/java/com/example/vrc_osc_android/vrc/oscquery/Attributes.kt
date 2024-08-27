@@ -1,14 +1,16 @@
 package com.example.vrc_osc_android.vrc.oscquery
 
-import org.testng.Assert.assertEquals
-import org.testng.annotations.Test
+import org.junit.Assert.assertEquals
+import org.junit.Test
 
 object Attributes {
-    enum class AccessValues {
-        NoValue,
-        ReadOnly,
-        WriteOnly,
-        ReadWrite
+    enum class AccessValues(val value: Int) {
+        NoValue(0),
+        ReadOnly(1),
+        WriteOnly(2),
+        ReadWrite(3);
+
+        override fun toString(): String = value.toString()
     }
 
     private val oscTypeLookup = mapOf(
