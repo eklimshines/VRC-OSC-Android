@@ -6,15 +6,8 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonSerializer
 
 open class OSCQueryNode {
-    // Empty Constructor for Json Serialization
-    constructor()
-
-    constructor(fullPath: String) {
-        this.fullPath = fullPath
-    }
-
     @SerializedName(Attributes.DESCRIPTION)
-    var description: String = ""
+    var description: String? = null
 
     @SerializedName(Attributes.FULL_PATH)
     var fullPath: String = ""
@@ -26,19 +19,25 @@ open class OSCQueryNode {
     var contents: MutableMap<String, OSCQueryNode>? = null
 
     @SerializedName(Attributes.TYPE)
-    var oscType: String= ""
+    var oscType: String? = null
 
     @SerializedName(Attributes.VALUE)
     var value: Array<Any>? = null
 
     val parentPath: String
         get() {
-            val length = fullPath?.lastIndexOf("/")?.coerceAtLeast(1) ?: 1
-            return fullPath?.substring(0, length) ?: ""
+            val length = maxOf(1, fullPath.lastIndexOf("/"))
+            return fullPath.substring(0, length)
         }
 
     val name: String
-        get() = fullPath?.substring((fullPath?.lastIndexOf('/') ?: -1) + 1) ?: ""
+        get() = fullPath.substring(fullPath.lastIndexOf('/') + 1)
+
+    constructor()
+
+    constructor(fullPath: String) {
+        this.fullPath = fullPath
+    }
 
     override fun toString(): String {
         return writeSettings.toJson(this)

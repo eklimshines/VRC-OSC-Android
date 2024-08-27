@@ -61,6 +61,10 @@ class OSCQueryRootNode : OSCQueryNode() {
      */
     private fun addContents(node: OSCQueryNode) {
         // Don't try to add null contents
+        if (node.contents.isNullOrEmpty()){
+            return;
+        }
+
         node.contents?.values?.forEach { subNode ->
             pathLookup[subNode.fullPath] = subNode
             subNode.contents?.let { addContents(subNode) }
