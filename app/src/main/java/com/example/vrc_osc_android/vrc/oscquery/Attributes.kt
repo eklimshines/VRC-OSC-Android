@@ -11,6 +11,7 @@ object Attributes {
         ReadWrite(3);
 
         override fun toString(): String = value.toString()
+        fun toInt(): Int = value
     }
 
     private val oscTypeLookup = mapOf(

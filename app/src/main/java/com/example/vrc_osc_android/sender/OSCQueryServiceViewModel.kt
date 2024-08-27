@@ -26,9 +26,9 @@ class OSCQueryServiceViewModel(private val context: Context) : ViewModel() {
     private val wordGenerator = RandomWordGenerator()
 
     init {
-        val name = "MyOSCQueryService2"
-        val tcpPort = 8001
-        val oscPort = 9001
+        val name = "MyOSCQueryService3"
+        val tcpPort = 8000
+        val oscPort = 9000
         _service = OSCQueryService(context, name, tcpPort, oscPort)
         /*
         _service = OSCQueryServiceBuilder(context)

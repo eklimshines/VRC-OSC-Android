@@ -4,53 +4,52 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import java.net.InetAddress
+import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class MeaModDiscovery(private val context: Context) : IDiscovery {
     companion object {
         private const val TAG = "MeaModDiscovery"
-        private val SERVICE_TYPE_OSC = "${Attributes.SERVICE_OSC_UDP}"
-        private val SERVICE_TYPE_OSCQUERY = "${Attributes.SERVICE_OSCJSON_TCP}"
+        private const val MAX_RESOLVE_RETRIES = 3
+        private const val RESOLVE_RETRY_DELAY = 1000L // 1 second
     }
 
     private val nsdManager: NsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
-    private val serviceScope = CoroutineScope(Dispatchers.Default)
+    private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val oscQueryServices = mutableSetOf<OSCQueryServiceProfile>()
     private val oscServices = mutableSetOf<OSCQueryServiceProfile>()
 
     override var onOscServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
     override var onOscQueryServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
-    var onOscServiceRemoved: ((String) -> Unit)? = null
-    var onOscQueryServiceRemoved: ((String) -> Unit)? = null
+    private var onOscServiceRemoved: ((String) -> Unit)? = null
+    private var onOscQueryServiceRemoved: ((String) -> Unit)? = null
 
-    private val profiles = mutableMapOf<OSCQueryServiceProfile, NsdServiceInfo>()
+    private val advertisedServices = mutableMapOf<OSCQueryServiceProfile, NsdServiceInfo>()
 
     private val discoveryMutex = Mutex()
     private var isOscDiscoveryActive = false
     private var isOscQueryDiscoveryActive = false
 
-    private val oscDiscoveryListener = createDiscoveryListener(SERVICE_TYPE_OSC)
-    private val oscQueryDiscoveryListener = createDiscoveryListener(SERVICE_TYPE_OSCQUERY)
+    private val oscDiscoveryListener = createDiscoveryListener(Attributes.SERVICE_OSC_UDP)
+    private val oscQueryDiscoveryListener = createDiscoveryListener(Attributes.SERVICE_OSCJSON_TCP)
+
+    init {
+        startDiscovery()
+    }
 
     private fun createDiscoveryListener(serviceType: String) = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(regType: String) {
             Log.d(TAG, "Service discovery started for $regType")
-            serviceScope.launch {
+            coroutineScope.launch {
                 discoveryMutex.withLock {
                     when (serviceType) {
-                        SERVICE_TYPE_OSC -> isOscDiscoveryActive = true
-                        SERVICE_TYPE_OSCQUERY -> isOscQueryDiscoveryActive = true
+                        Attributes.SERVICE_OSC_UDP -> isOscDiscoveryActive = true
+                        Attributes.SERVICE_OSCJSON_TCP -> isOscQueryDiscoveryActive = true
                     }
                 }
             }
@@ -62,17 +61,17 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         }
 
         override fun onServiceLost(service: NsdServiceInfo) {
-            Log.e(TAG, "Service lost: ${service.serviceName}")
+            Log.d(TAG, "Service lost: ${service.serviceName}")
             removeMatchedService(service)
         }
 
         override fun onDiscoveryStopped(serviceType: String) {
             Log.i(TAG, "Discovery stopped: $serviceType")
-            serviceScope.launch {
+            coroutineScope.launch {
                 discoveryMutex.withLock {
                     when (serviceType) {
-                        SERVICE_TYPE_OSC -> isOscDiscoveryActive = false
-                        SERVICE_TYPE_OSCQUERY -> isOscQueryDiscoveryActive = false
+                        Attributes.SERVICE_OSC_UDP -> isOscDiscoveryActive = false
+                        Attributes.SERVICE_OSCJSON_TCP -> isOscQueryDiscoveryActive = false
                     }
                 }
             }
@@ -80,11 +79,11 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
         override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
             Log.e(TAG, "Discovery failed to start for $serviceType: Error code: $errorCode")
-            serviceScope.launch {
+            coroutineScope.launch {
                 discoveryMutex.withLock {
                     when (serviceType) {
-                        SERVICE_TYPE_OSC -> isOscDiscoveryActive = false
-                        SERVICE_TYPE_OSCQUERY -> isOscQueryDiscoveryActive = false
+                        Attributes.SERVICE_OSC_UDP -> isOscDiscoveryActive = false
+                        Attributes.SERVICE_OSCJSON_TCP -> isOscQueryDiscoveryActive = false
                     }
                 }
             }
@@ -95,35 +94,34 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         }
     }
 
-    init {
-        //startDiscovery()
-    }
-
-    private suspend fun startDiscovery() {
-        discoveryMutex.withLock {
-            stopDiscoveryInternal()
-            startDiscoveryInternal()
+    private fun startDiscovery() {
+        coroutineScope.launch {
+            discoveryMutex.withLock {
+                stopDiscoveryInternal()
+                startDiscoveryInternal()
+            }
         }
     }
 
-    private suspend fun startDiscoveryInternal() {
+    private fun startDiscoveryInternal() {
         if (!isOscDiscoveryActive) {
             try {
-                nsdManager.discoverServices(SERVICE_TYPE_OSC, NsdManager.PROTOCOL_DNS_SD, oscDiscoveryListener)
+                nsdManager.discoverServices(Attributes.SERVICE_OSC_UDP, NsdManager.PROTOCOL_DNS_SD, oscDiscoveryListener)
             } catch (e: IllegalArgumentException) {
                 Log.e(TAG, "Failed to start OSC discovery: ${e.message}")
             }
         }
         if (!isOscQueryDiscoveryActive) {
             try {
-                nsdManager.discoverServices(SERVICE_TYPE_OSCQUERY, NsdManager.PROTOCOL_DNS_SD, oscQueryDiscoveryListener)
+                nsdManager.discoverServices(Attributes.SERVICE_OSCJSON_TCP, NsdManager.PROTOCOL_DNS_SD, oscQueryDiscoveryListener)
             } catch (e: IllegalArgumentException) {
                 Log.e(TAG, "Failed to start OSCQuery discovery: ${e.message}")
             }
         }
     }
 
-    private suspend fun stopDiscoveryInternal() {
+    private fun stopDiscoveryInternal() {
+        Log.d(TAG, "stopDiscoveryInternal")
         if (isOscDiscoveryActive) {
             try {
                 nsdManager.stopServiceDiscovery(oscDiscoveryListener)
@@ -143,29 +141,29 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
     }
 
     private fun resolveService(service: NsdServiceInfo) {
-        serviceScope.launch {
-            withContext(Dispatchers.IO) {
-                var retryCount = 0
-                while (retryCount < 3) {
-                    try {
-                        val resolvedInfo = resolveServiceSuspend(service)
-                        addMatchedService(resolvedInfo)
-                        return@withContext
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Resolve failed: ${service.serviceName}, attempt ${retryCount + 1}, Error: ${e.message}")
-                        retryCount++
-                        delay(1000) // Wait for 1 second before retrying
+        coroutineScope.launch {
+            var retryCount = 0
+            while (retryCount < MAX_RESOLVE_RETRIES) {
+                try {
+                    val resolvedInfo = resolveServiceSuspend(service)
+                    addMatchedService(resolvedInfo)
+                    return@launch
+                } catch (e: Exception) {
+                    Log.e(TAG, "Resolve failed: ${service.serviceName}, attempt ${retryCount + 1}, Error: ${e.message}")
+                    retryCount++
+                    if (retryCount < MAX_RESOLVE_RETRIES) {
+                        delay(RESOLVE_RETRY_DELAY)
                     }
                 }
-                Log.e(TAG, "Failed to resolve service after 3 attempts: ${service.serviceName}")
             }
+            Log.e(TAG, "Failed to resolve service after $MAX_RESOLVE_RETRIES attempts: ${service.serviceName}")
         }
     }
 
     private suspend fun resolveServiceSuspend(service: NsdServiceInfo): NsdServiceInfo = suspendCancellableCoroutine { continuation ->
         nsdManager.resolveService(service, object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                continuation.resumeWithException(Exception("Resolve failed with error code: $errorCode"))
+                continuation.resumeWithException(IOException("Resolve failed with error code: $errorCode"))
             }
 
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
@@ -180,14 +178,14 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         val address = serviceInfo.host
 
         when (serviceInfo.serviceType) {
-            SERVICE_TYPE_OSC -> {
+            Attributes.SERVICE_OSC_UDP -> {
                 if (oscServices.none { it.name == instanceName }) {
                     val profile = OSCQueryServiceProfile(instanceName, address, port, OSCQueryServiceProfile.ServiceType.OSC)
                     oscServices.add(profile)
                     onOscServiceAdded?.invoke(profile)
                 }
             }
-            SERVICE_TYPE_OSCQUERY -> {
+            Attributes.SERVICE_OSCJSON_TCP -> {
                 if (oscQueryServices.none { it.name == instanceName }) {
                     val profile = OSCQueryServiceProfile(instanceName, address, port, OSCQueryServiceProfile.ServiceType.OSCQuery)
                     oscQueryServices.add(profile)
@@ -201,11 +199,11 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         val instanceName = serviceInfo.serviceName
 
         when (serviceInfo.serviceType) {
-            SERVICE_TYPE_OSC -> {
+            Attributes.SERVICE_OSC_UDP -> {
                 oscServices.removeAll { it.name == instanceName }
                 onOscServiceRemoved?.invoke(instanceName)
             }
-            SERVICE_TYPE_OSCQUERY -> {
+            Attributes.SERVICE_OSCJSON_TCP -> {
                 oscQueryServices.removeAll { it.name == instanceName }
                 onOscQueryServiceRemoved?.invoke(instanceName)
             }
@@ -213,45 +211,45 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
     }
 
     override fun refreshServices() {
-        serviceScope.launch {
-            startDiscovery()
-        }
+        startDiscovery()
     }
 
     override fun advertise(profile: OSCQueryServiceProfile) {
-        serviceScope.launch {
-            withContext(Dispatchers.IO) {
-                val serviceInfo = NsdServiceInfo().apply {
-                    serviceName = profile.name
-                    serviceType = when (profile.serviceType) {
-                        OSCQueryServiceProfile.ServiceType.OSC -> SERVICE_TYPE_OSC
-                        OSCQueryServiceProfile.ServiceType.OSCQuery -> SERVICE_TYPE_OSCQUERY
-                        else -> throw IllegalArgumentException("Unknown service type")
-                    }
-                    port = profile.port
-                    host = profile.address
+        coroutineScope.launch {
+            val serviceInfo = NsdServiceInfo().apply {
+                serviceName = profile.name
+                serviceType = when (profile.serviceType) {
+                    OSCQueryServiceProfile.ServiceType.OSC -> Attributes.SERVICE_OSC_UDP
+                    OSCQueryServiceProfile.ServiceType.OSCQuery -> Attributes.SERVICE_OSCJSON_TCP
+                    else -> throw IllegalArgumentException("Unknown service type")
                 }
+                port = profile.port
+                host = profile.address
+            }
 
-                nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, object : NsdManager.RegistrationListener {
-                    override fun onServiceRegistered(NsdServiceInfo: NsdServiceInfo) {
-                        Log.d(TAG, "Service registered: ${NsdServiceInfo.serviceName}")
-                        profiles[profile] = serviceInfo
-                    }
-
-                    override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                        Log.e(TAG, "Registration failed: ${serviceInfo.serviceName} Error code: $errorCode")
-                    }
-
-                    override fun onServiceUnregistered(arg0: NsdServiceInfo) {
-                        Log.d(TAG, "Service unregistered: ${arg0.serviceName}")
-                    }
-
-                    override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                        Log.e(TAG, "Unregistration failed: ${serviceInfo.serviceName} Error code: $errorCode")
-                    }
-                })
+            try {
+                registerServiceSuspend(serviceInfo)
+                Log.d(TAG, "Service registered: ${serviceInfo.serviceName}")
+                advertisedServices[profile] = serviceInfo
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to register service: ${serviceInfo.serviceName}, Error: ${e.message}")
             }
         }
+    }
+
+    private suspend fun registerServiceSuspend(serviceInfo: NsdServiceInfo) = suspendCancellableCoroutine { continuation ->
+        nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, object : NsdManager.RegistrationListener {
+            override fun onServiceRegistered(registeredService: NsdServiceInfo) {
+                continuation.resume(Unit)
+            }
+
+            override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                continuation.resumeWithException(IOException("Registration failed with error code: $errorCode"))
+            }
+
+            override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {}
+            override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+        })
     }
 
     override fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = oscQueryServices
@@ -259,47 +257,61 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
     override fun getOSCServices(): Set<OSCQueryServiceProfile> = oscServices
 
     override fun unadvertise(profile: OSCQueryServiceProfile) {
-        serviceScope.launch {
-            withContext(Dispatchers.IO) {
-                profiles[profile]?.let { serviceInfo ->
-                    nsdManager.unregisterService(object : NsdManager.RegistrationListener {
-                        override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
-                            Log.d(TAG, "Service unregistered: ${serviceInfo.serviceName}")
-                            profiles.remove(profile)
-                        }
-
-                        override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                            Log.e(TAG, "Unregistration failed: ${serviceInfo.serviceName} Error code: $errorCode")
-                        }
-
-                        override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {}
-                        override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
-                    })
+        coroutineScope.launch {
+            advertisedServices[profile]?.let { serviceInfo ->
+                try {
+                    unregisterServiceSuspend(serviceInfo)
+                    Log.d(TAG, "Service unregistered: ${serviceInfo.serviceName}")
+                    advertisedServices.remove(profile)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to unregister service: ${serviceInfo.serviceName}, Error: ${e.message}")
                 }
             }
         }
     }
 
+    private suspend fun unregisterServiceSuspend(serviceInfo: NsdServiceInfo) = suspendCancellableCoroutine { continuation ->
+        nsdManager.unregisterService(object : NsdManager.RegistrationListener {
+            override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
+                continuation.resume(Unit)
+            }
+
+            override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                continuation.resumeWithException(IOException("Unregistration failed with error code: $errorCode"))
+            }
+
+            override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {}
+            override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+        })
+    }
 
     override fun close() {
-        serviceScope.launch {
+        Log.d(TAG, "Service close")
+        coroutineScope.launch {
             discoveryMutex.withLock {
                 stopDiscoveryInternal()
             }
+            unregisterAllServices()
         }
-        profiles.values.forEach { serviceInfo ->
-            nsdManager.unregisterService(object : NsdManager.RegistrationListener {
-                override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
-                    Log.d(TAG, "Service unregistered: ${serviceInfo.serviceName}")
-                }
+        coroutineScope.cancel()
+    }
 
-                override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                    Log.e(TAG, "Unregistration failed: ${serviceInfo.serviceName} Error code: $errorCode")
-                }
+    private suspend fun unregisterAllServices() {
+        Log.d(TAG, "unregisterAllServices")
+        advertisedServices.values.forEach { serviceInfo ->
+            try {
+                unregisterServiceSuspend(serviceInfo)
+                Log.d(TAG, "Service unregistered: ${serviceInfo.serviceName}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to unregister service: ${serviceInfo.serviceName}, Error: ${e.message}")
+            }
+        }
+        advertisedServices.clear()
+    }
 
-                override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {}
-                override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
-            })
+    fun onAppExit() {
+        runBlocking {
+            close()
         }
     }
 }

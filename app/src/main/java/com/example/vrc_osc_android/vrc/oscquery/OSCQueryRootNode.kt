@@ -80,12 +80,15 @@ class OSCQueryRootNode : OSCQueryNode() {
     fun serializeWithDepthLimit(node: OSCQueryNode, maxDepth: Int): String {
         val gson = GsonBuilder().excludeFieldsWithoutExposeAnnotation().create()
 
-        fun JsonObject.addNodeProperties(node: OSCQueryNode, currentDepth: Int) {
-            addProperty(Attributes.FULL_PATH, node.fullPath)
+        fun JsonObject.addNodeProperties(node: OSCQueryNode, currentDepth: Int, isRoot: Boolean = false) {
             addProperty(Attributes.DESCRIPTION, node.description)
-            addProperty(Attributes.ACCESS, node.access?.toString())
-            addProperty(Attributes.TYPE, node.oscType)
-            add(Attributes.VALUE, gson.toJsonTree(node.value))
+            addProperty(Attributes.FULL_PATH, node.fullPath)
+            addProperty(Attributes.ACCESS, node.access?.toInt())
+
+            if (!isRoot) {
+                addProperty(Attributes.TYPE, node.oscType)
+                add(Attributes.VALUE, gson.toJsonTree(node.value))
+            }
 
             if (currentDepth < maxDepth && node.contents != null) {
                 add(Attributes.CONTENTS, JsonObject().apply {
@@ -96,7 +99,7 @@ class OSCQueryRootNode : OSCQueryNode() {
             }
         }
 
-        return JsonObject().apply { addNodeProperties(node, 0) }.toString()
+        return JsonObject().apply { addNodeProperties(node, 0, isRoot = true) }.toString()
     }
 
     companion object {
