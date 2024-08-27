@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.example.vrc_osc_android.R
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -89,12 +90,13 @@ class OSCQueryHttpServer(
             return null
         }
 
-        val path = File(context.filesDir, "Resources/OSCQueryExplorer.html")
-        return if (path.exists()) {
-            serveStaticFile(path, "text/html")
-        } else {
-            Log.e(TAG, "Cannot find file at ${path.absolutePath} to serve.")
-            null
+        return try {
+            val input = context.assets.open("OSCQueryExplorer.html")
+            val content = input.bufferedReader().use { it.readText() }
+            newFixedLengthResponse(Response.Status.OK, "text/html", content)
+        } catch (e: IOException) {
+            Log.e(TAG, "Error serving OSCQueryExplorer.html: ${e.message}")
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Internal Server Error")
         }
     }
 
@@ -103,12 +105,13 @@ class OSCQueryHttpServer(
             return null
         }
 
-        val path = File(context.filesDir, "Resources/favicon.ico")
-        return if (path.exists()) {
-            serveStaticFile(path, "image/x-icon")
-        } else {
-            Log.e(TAG, "Cannot find file at ${path.absolutePath} to serve.")
-            null
+        return try {
+            val inputStream = context.resources.openRawResource(R.raw.favicon)
+            val bytes = inputStream.readBytes()
+            newFixedLengthResponse(Response.Status.OK, "image/x-icon", bytes.inputStream(), bytes.size.toLong())
+        } catch (e: IOException) {
+            Log.e(TAG, "Error serving favicon: ${e.message}")
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Internal Server Error")
         }
     }
 
