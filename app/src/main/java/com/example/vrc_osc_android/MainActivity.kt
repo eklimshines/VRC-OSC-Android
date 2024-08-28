@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        viewModel = OSCQueryServiceViewModel(applicationContext)
+        //viewModel = OSCQueryServiceViewModel(applicationContext)
 
         setContent {
             VRCOSCAndroidTheme {
@@ -35,10 +35,10 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     //sender
-                    OSCQueryServiceScreen(viewModel)
+                    //OSCQueryServiceScreen(viewModel)
 
                     //receiver
-                    //OSCQueryApp()
+                    OSCQueryApp()
                 }
             }
         }
@@ -55,6 +55,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        viewModel.dispose()
+        viewModel?.dispose()
     }
 }

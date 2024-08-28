@@ -16,6 +16,9 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         private const val TAG = "MeaModDiscovery"
         private const val MAX_RESOLVE_RETRIES = 3
         private const val RESOLVE_RETRY_DELAY = 1000L // 1 second
+
+        val LOCAL_OSC_UDP_SERVICE_NAME = "${Attributes.SERVICE_OSC_UDP}.local"
+        val LOCAL_OSC_JSON_SERVICE_NAME = "${Attributes.SERVICE_OSCJSON_TCP}.local"
     }
 
     private val nsdManager: NsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -176,17 +179,39 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         val instanceName = serviceInfo.serviceName
         val port = serviceInfo.port
         val address = serviceInfo.host
+        val serviceName = serviceInfo.serviceType.split(".").drop(1).joinToString(".")
 
-        when (serviceInfo.serviceType) {
-            Attributes.SERVICE_OSC_UDP -> {
+        Log.d(TAG, "addMatchedService: $instanceName, $address, $port, $serviceName")
+        Log.d(TAG, "addMatchedService oscServices: ${oscServices.size}, oscQueryServices: ${oscQueryServices.size}")
+
+        when (serviceName) {
+            Attributes.SERVICE_OSC_UDP   -> {
                 if (oscServices.none { it.name == instanceName }) {
+                    Log.d(TAG, "addMatchedService SERVICE_OSC_UDP: $instanceName, $address, $port")
                     val profile = OSCQueryServiceProfile(instanceName, address, port, OSCQueryServiceProfile.ServiceType.OSC)
                     oscServices.add(profile)
                     onOscServiceAdded?.invoke(profile)
                 }
             }
-            Attributes.SERVICE_OSCJSON_TCP -> {
+            Attributes.SERVICE_OSCJSON_TCP  -> {
                 if (oscQueryServices.none { it.name == instanceName }) {
+                    Log.d(TAG, "addMatchedService SERVICE_OSCJSON_TCP: $instanceName, $address, $port")
+                    val profile = OSCQueryServiceProfile(instanceName, address, port, OSCQueryServiceProfile.ServiceType.OSCQuery)
+                    oscQueryServices.add(profile)
+                    onOscQueryServiceAdded?.invoke(profile)
+                }
+            }
+            LOCAL_OSC_UDP_SERVICE_NAME   -> {
+                if (oscServices.none { it.name == instanceName }) {
+                    Log.d(TAG, "addMatchedService LOCAL_OSC_UDP_SERVICE_NAME: $instanceName, $address, $port")
+                    val profile = OSCQueryServiceProfile(instanceName, address, port, OSCQueryServiceProfile.ServiceType.OSC)
+                    oscServices.add(profile)
+                    onOscServiceAdded?.invoke(profile)
+                }
+            }
+            LOCAL_OSC_JSON_SERVICE_NAME  -> {
+                if (oscQueryServices.none { it.name == instanceName }) {
+                    Log.d(TAG, "addMatchedService LOCAL_OSC_JSON_SERVICE_NAME: $instanceName, $address, $port")
                     val profile = OSCQueryServiceProfile(instanceName, address, port, OSCQueryServiceProfile.ServiceType.OSCQuery)
                     oscQueryServices.add(profile)
                     onOscQueryServiceAdded?.invoke(profile)
@@ -197,8 +222,17 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
     private fun removeMatchedService(serviceInfo: NsdServiceInfo) {
         val instanceName = serviceInfo.serviceName
+        val serviceName = serviceInfo.serviceType.split(".").drop(1).joinToString(".")
 
-        when (serviceInfo.serviceType) {
+        when (serviceName) {
+            LOCAL_OSC_UDP_SERVICE_NAME -> {
+                oscServices.removeAll { it.name == instanceName }
+                onOscServiceRemoved?.invoke(instanceName)
+            }
+            LOCAL_OSC_JSON_SERVICE_NAME -> {
+                oscQueryServices.removeAll { it.name == instanceName }
+                onOscQueryServiceRemoved?.invoke(instanceName)
+            }
             Attributes.SERVICE_OSC_UDP -> {
                 oscServices.removeAll { it.name == instanceName }
                 onOscServiceRemoved?.invoke(instanceName)

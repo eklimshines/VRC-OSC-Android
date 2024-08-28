@@ -23,23 +23,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
 import com.example.vrc_osc_android.vrc.oscquery.OSCQueryServiceProfile
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun FindServiceDialog(
     oscQueryService: OSCQueryService,
     onServiceSelected: (OSCQueryServiceProfile) -> Unit
 ) {
-    var services by remember { mutableStateOf<Set<OSCQueryServiceProfile>>(emptySet()) }
+    var services by remember { mutableStateOf<List<OSCQueryServiceProfile>>(emptyList()) }
     var isSearching by remember { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
 
+    // Equivalent to C#'s OnOscQueryServiceAdded event
     LaunchedEffect(Unit) {
-        coroutineScope.launch {
-            oscQueryService.refreshServices()
-            delay(2000) // Simulate network delay
-            services = oscQueryService.getOSCQueryServices()
+        oscQueryService.onOscQueryServiceAdded = { _ ->
+            coroutineScope.launch {
+                refreshListings(oscQueryService) { updatedServices ->
+                    services = updatedServices
+                    isSearching = false
+                }
+            }
+        }
+    }
+
+    // Equivalent to C#'s Enter event
+    LaunchedEffect(Unit) {
+        refreshListings(oscQueryService) { updatedServices ->
+            services = updatedServices
             isSearching = false
         }
     }
@@ -60,7 +73,7 @@ fun FindServiceDialog(
 
         if (!isSearching) {
             LazyColumn {
-                items(services.toList()) { service ->
+                items(services) { service ->
                     Button(
                         onClick = { onServiceSelected(service) },
                         modifier = Modifier.fillMaxWidth()
@@ -70,5 +83,16 @@ fun FindServiceDialog(
                 }
             }
         }
+    }
+}
+
+// Equivalent to C#'s RefreshListings method
+suspend fun refreshListings(
+    oscQueryService: OSCQueryService,
+    onServicesUpdated: (List<OSCQueryServiceProfile>) -> Unit
+) {
+    withContext(Dispatchers.Default) {
+        val updatedServices = oscQueryService.getOSCQueryServices().toList()
+        onServicesUpdated(updatedServices)
     }
 }

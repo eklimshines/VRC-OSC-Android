@@ -1,5 +1,6 @@
 package com.example.vrc_osc_android
 
+import android.util.Log
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,8 +33,7 @@ fun ListServiceData(oscQueryService: OSCQueryService, profile: OSCQueryServicePr
     LaunchedEffect(Unit) {
         coroutineScope.launch {
             while (true) {
-                // This is a placeholder. You should implement actual data fetching from the OSCQueryService
-                data = "Fetched data for ${profile.name} (${profile.address}:${profile.port})"
+                data = fetchData(profile.port)
                 delay(500) // Poll every half second
             }
         }
@@ -54,6 +54,7 @@ fun ListServiceData(oscQueryService: OSCQueryService, profile: OSCQueryServicePr
 }
 
 suspend fun fetchData(port: Int): String {
+    Log.d("LiveServuceData", "fetchData ${port}")
     return try {
         val client = OkHttpClient()
         val request = Request.Builder()
