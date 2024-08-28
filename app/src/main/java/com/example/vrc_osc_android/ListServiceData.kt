@@ -19,8 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
 import com.example.vrc_osc_android.vrc.oscquery.OSCQueryServiceProfile
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -33,7 +35,8 @@ fun ListServiceData(oscQueryService: OSCQueryService, profile: OSCQueryServicePr
     LaunchedEffect(Unit) {
         coroutineScope.launch {
             while (true) {
-                data = fetchData(profile.port)
+                data = fetchData(profile)
+                Log.d("LiveServiceData", "data: ${data}")
                 delay(500) // Poll every half second
             }
         }
@@ -53,12 +56,14 @@ fun ListServiceData(oscQueryService: OSCQueryService, profile: OSCQueryServicePr
     }
 }
 
-suspend fun fetchData(port: Int): String {
-    Log.d("LiveServuceData", "fetchData ${port}")
-    return try {
+suspend fun fetchData(profile: OSCQueryServiceProfile): String = withContext(Dispatchers.IO) {
+    //val hostName = profile.getHostName()
+    Log.d("LiveServiceData", "fetchData port: ${profile.port}, ${profile.address}, ${profile.address.hostName}, ${profile.address.hostAddress}")
+
+    try {
         val client = OkHttpClient()
         val request = Request.Builder()
-            .url("http://localhost:$port/")
+            .url("http://${profile.address.hostAddress}:${profile.port}/")
             .build()
 
         val response = client.newCall(request).execute()
@@ -71,9 +76,10 @@ suspend fun fetchData(port: Int): String {
                 val value = contents.getJSONArray(key).get(0)
                 result.append("$key: $value\n")
             }
+            Log.d("LiveServiceData", "result: ${result.toString()}")
             result.toString()
         } else {
-            "Failed to fetch data"
+            "Failed to fetch data: ${response.code}"
         }
     } catch (e: Exception) {
         "Error: ${e.message}"
