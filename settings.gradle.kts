@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 rootProject.name = "VRC-OSC-Android"
 include(":app")
 include(":bhapticsVRCOSCQuery")
+include(":osc_datasender")
+include(":osc_datareceiver")
