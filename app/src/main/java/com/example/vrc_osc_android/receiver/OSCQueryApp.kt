@@ -6,9 +6,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.bhaptics.vrc.oscquery.OSCQueryService
+import com.bhaptics.vrc.oscquery.OSCQueryServiceProfile
 import com.example.vrc_osc_android.ListServiceData
-import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
-import com.example.vrc_osc_android.vrc.oscquery.OSCQueryServiceProfile
 
 @Composable
 fun OSCQueryApp() {

@@ -5,9 +5,8 @@ import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.vrc_osc_android.vrc.oscquery.Attributes
-import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
-import com.example.vrc_osc_android.vrc.oscquery.OSCQueryServiceBuilder
+import com.bhaptics.vrc.oscquery.Attributes
+import com.bhaptics.vrc.oscquery.OSCQueryService
 import kotlinx.coroutines.launch
 import java.util.Random
 

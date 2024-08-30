@@ -21,10 +21,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.example.vrc_osc_android.vrc.oscquery.OSCQueryService
-import com.example.vrc_osc_android.vrc.oscquery.OSCQueryServiceProfile
+import com.bhaptics.vrc.oscquery.OSCQueryService
+import com.bhaptics.vrc.oscquery.OSCQueryServiceProfile
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
