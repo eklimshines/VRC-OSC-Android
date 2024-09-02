@@ -271,7 +271,7 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         }
     }
 
-    private suspend fun registerServiceSuspend(serviceInfo: NsdServiceInfo) = suspendCancellableCoroutine { continuation ->
+    private suspend fun registerServiceSuspend(serviceInfo: NsdServiceInfo) = suspendCancellableCoroutine<Unit> { continuation ->
         nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(registeredService: NsdServiceInfo) {
                 continuation.resume(Unit)
@@ -304,7 +304,7 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         }
     }
 
-    private suspend fun unregisterServiceSuspend(serviceInfo: NsdServiceInfo) = suspendCancellableCoroutine { continuation ->
+    private suspend fun unregisterServiceSuspend(serviceInfo: NsdServiceInfo) = suspendCancellableCoroutine<Unit> { continuation ->
         nsdManager.unregisterService(object : NsdManager.RegistrationListener {
             override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
                 continuation.resume(Unit)
