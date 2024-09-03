@@ -59,11 +59,13 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         }
 
         override fun onServiceFound(service: NsdServiceInfo) {
+            // TODO (@eklimshines) Service discovered: VRChat-Client-CBADC3
             Log.d(TAG, "Service discovered: ${service.serviceName}")
             resolveService(service)
         }
 
         override fun onServiceLost(service: NsdServiceInfo) {
+            // TODO (@eklimshines) Service lost: VRChat-Client-CBADC3
             Log.d(TAG, "Service lost: ${service.serviceName}")
             removeMatchedService(service)
         }

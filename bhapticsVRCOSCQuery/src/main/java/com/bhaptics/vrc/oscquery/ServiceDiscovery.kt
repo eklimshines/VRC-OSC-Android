@@ -4,8 +4,10 @@ import java.net.InetAddress
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.util.Log
 
 class ServiceDiscovery(private val context: Context) {
+    private val TAG = "ServiceDiscovery"
     private val nsdManager: NsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val discoveryListeners = mutableMapOf<String, NsdManager.DiscoveryListener>()
     private val registrationListeners = mutableMapOf<String, NsdManager.RegistrationListener>()
@@ -19,19 +21,19 @@ class ServiceDiscovery(private val context: Context) {
 
         val listener = object : NsdManager.RegistrationListener {
             override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                println("Service registration failed: $errorCode")
+                Log.e(TAG, "Service registration failed: $errorCode")
             }
 
             override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                println("Service unregistration failed: $errorCode")
+                Log.e(TAG, "Service unregistration failed: $errorCode")
             }
 
             override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
-                println("Service registered: ${serviceInfo.serviceName}")
+                Log.i(TAG, "Service registered: ${serviceInfo.serviceName}")
             }
 
             override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
-                println("Service unregistered: ${serviceInfo.serviceName}")
+                Log.i(TAG, "Service unregistered: ${serviceInfo.serviceName}")
             }
         }
 
@@ -49,18 +51,18 @@ class ServiceDiscovery(private val context: Context) {
     fun discoverServices(serviceType: String, onServiceFound: (OSCQueryServiceProfile) -> Unit) {
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String) {
-                println("Service discovery started")
+                Log.i(TAG, "Service discovery started")
             }
 
             override fun onServiceFound(service: NsdServiceInfo) {
-                println("Service discovered: ${service.serviceName}")
+                Log.i(TAG, "Service discovered: ${service.serviceName}")
                 nsdManager.resolveService(service, object : NsdManager.ResolveListener {
                     override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                        println("Resolve failed: $errorCode")
+                        Log.e(TAG, "Resolve failed: $errorCode")
                     }
 
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                        println("Resolve Succeeded. ${serviceInfo.serviceName}")
+                        Log.i(TAG, "Resolve Succeeded. ${serviceInfo.serviceName}")
                         val profile = OSCQueryServiceProfile(
                             name = serviceInfo.serviceName,
                             address = serviceInfo.host,
@@ -77,19 +79,19 @@ class ServiceDiscovery(private val context: Context) {
             }
 
             override fun onServiceLost(service: NsdServiceInfo) {
-                println("Service lost: ${service.serviceName}")
+                Log.i(TAG, "Service lost: ${service.serviceName}")
             }
 
             override fun onDiscoveryStopped(serviceType: String) {
-                println("Discovery stopped: $serviceType")
+                Log.i(TAG, "Discovery stopped: $serviceType")
             }
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                println("Discovery failed: Error code: $errorCode")
+                Log.e(TAG, "Discovery failed: Error code: $errorCode")
             }
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                println("Discovery failed: Error code: $errorCode")
+                Log.e(TAG, "Discovery failed: Error code: $errorCode")
             }
         }
 
