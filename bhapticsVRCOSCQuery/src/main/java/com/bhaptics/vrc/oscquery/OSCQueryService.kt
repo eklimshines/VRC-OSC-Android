@@ -81,6 +81,8 @@ class OSCQueryService(
 
     var onOscServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
     var onOscQueryServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
+    var onOscServiceRemoved: ((String) -> Unit)? = null
+    var onOscQueryServiceRemoved: ((String) -> Unit)? = null
 
     init {
         serviceScope.launch {
@@ -101,6 +103,8 @@ class OSCQueryService(
         this._discovery = discovery
         discovery.onOscQueryServiceAdded = { profile -> onOscQueryServiceAdded?.invoke(profile) }
         discovery.onOscServiceAdded = { profile -> onOscServiceAdded?.invoke(profile) }
+        discovery.onOscServiceRemoved = { profile -> onOscServiceRemoved?.invoke(profile) }
+        discovery.onOscQueryServiceRemoved = { profile -> onOscQueryServiceRemoved?.invoke(profile) }
     }
 
     fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = discovery.getOSCQueryServices()

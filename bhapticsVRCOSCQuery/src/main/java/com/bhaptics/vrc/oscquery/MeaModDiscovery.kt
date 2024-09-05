@@ -29,8 +29,8 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
     override var onOscServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
     override var onOscQueryServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
-    private var onOscServiceRemoved: ((String) -> Unit)? = null
-    private var onOscQueryServiceRemoved: ((String) -> Unit)? = null
+    override var onOscServiceRemoved: ((String) -> Unit)? = null
+    override var onOscQueryServiceRemoved: ((String) -> Unit)? = null
 
     private val advertisedServices = mutableMapOf<OSCQueryServiceProfile, NsdServiceInfo>()
 
