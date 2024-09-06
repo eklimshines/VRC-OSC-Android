@@ -226,20 +226,24 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         val instanceName = serviceInfo.serviceName
         val serviceName = serviceInfo.serviceType.split(".").drop(1).joinToString(".")
 
-        when (serviceName) {
-            LOCAL_OSC_UDP_SERVICE_NAME -> {
+        when {
+            serviceName == LOCAL_OSC_UDP_SERVICE_NAME -> {
                 oscServices.removeAll { it.name == instanceName }
                 onOscServiceRemoved?.invoke(instanceName)
             }
-            LOCAL_OSC_JSON_SERVICE_NAME -> {
+            serviceName == LOCAL_OSC_JSON_SERVICE_NAME -> {
                 oscQueryServices.removeAll { it.name == instanceName }
                 onOscQueryServiceRemoved?.invoke(instanceName)
             }
-            Attributes.SERVICE_OSC_UDP -> {
+            serviceName == Attributes.SERVICE_OSC_UDP -> {
                 oscServices.removeAll { it.name == instanceName }
                 onOscServiceRemoved?.invoke(instanceName)
             }
-            Attributes.SERVICE_OSCJSON_TCP -> {
+            serviceName == Attributes.SERVICE_OSCJSON_TCP -> {
+                oscQueryServices.removeAll { it.name == instanceName }
+                onOscQueryServiceRemoved?.invoke(instanceName)
+            }
+            instanceName.startsWith("VRChat-Client-") -> {
                 oscQueryServices.removeAll { it.name == instanceName }
                 onOscQueryServiceRemoved?.invoke(instanceName)
             }
