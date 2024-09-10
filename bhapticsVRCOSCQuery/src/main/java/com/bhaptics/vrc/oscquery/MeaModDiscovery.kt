@@ -8,6 +8,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -292,9 +294,9 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
         })
     }
 
-    override fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = oscQueryServices
+    override fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = oscQueryServices.toSet()
 
-    override fun getOSCServices(): Set<OSCQueryServiceProfile> = oscServices
+    override fun getOSCServices(): Set<OSCQueryServiceProfile> = oscServices.toSet()
 
     override fun unadvertise(profile: OSCQueryServiceProfile) {
         coroutineScope.launch {
