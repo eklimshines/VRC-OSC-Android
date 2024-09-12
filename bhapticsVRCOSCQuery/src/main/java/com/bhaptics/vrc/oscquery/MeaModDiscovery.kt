@@ -91,6 +91,11 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
                 Log.e(TAG, "Discovery failed to start for $serviceType: Error code: $errorCode")
+                // TODO NsdManager.FAILURE_MAX_LIMIT 해결 필요
+                // https://developer.android.com/reference/android/net/nsd/NsdManager.html
+                // Indicates that the operation failed because the maximum outstanding requests from the applications have reached.
+                // TODO VrChatService를 4번째 껏다키면 위 에러 나옴
+
                 coroutineScope.launch {
                     discoveryMutex.withLock {
                         when (serviceType) {
@@ -418,14 +423,16 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
             })
         }
 
-    override fun close() {
+    override fun close() = runBlocking {
         Log.d(TAG, "Service close")
-        coroutineScope.launch {
-            discoveryMutex.withLock {
-                stopDiscoveryInternal()
-            }
-            unregisterAllServices()
+        unregisterAllServices()
+        discoveryMutex.withLock {
+            stopOSCDeferred = CompletableDeferred()
+            stopOSCQueryDeferred = CompletableDeferred()
+            stopDiscoveryInternal()
         }
+        stopOSCDeferred?.await()
+        stopOSCQueryDeferred?.await()
         coroutineScope.cancel()
     }
 
