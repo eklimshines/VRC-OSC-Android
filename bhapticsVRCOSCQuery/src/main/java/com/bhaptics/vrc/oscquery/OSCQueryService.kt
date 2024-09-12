@@ -243,11 +243,13 @@ class OSCQueryService(
     }
 
     fun dispose() {
-        serviceScope.launch {
-            withContext(Dispatchers.IO) {
+        try {
+            if (::http.isInitialized) {
                 http.stop()
-                discovery.close()
             }
+            discovery.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "dispose: ", e)
         }
         serviceScope.cancel()
     }
