@@ -245,7 +245,9 @@ class OSCQueryService(
     fun dispose() {
         serviceScope.launch {
             withContext(Dispatchers.IO) {
-                http.stop()
+                if (::http.isInitialized) {
+                    http.stop()
+                }
                 discovery.close()
             }
         }
