@@ -9,8 +9,10 @@ import kotlinx.coroutines.withContext
 import java.net.InetAddress
 import java.net.Socket
 import fi.iki.elonen.NanoHTTPD
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import java.net.NetworkInterface
 import java.util.Collections
 import java.util.Locale
@@ -83,6 +85,7 @@ class OSCQueryService(
     var onOscQueryServiceAdded: ((OSCQueryServiceProfile) -> Unit)? = null
     var onOscServiceRemoved: ((String) -> Unit)? = null
     var onOscQueryServiceRemoved: ((String) -> Unit)? = null
+    private val advertiseJobs = mutableMapOf<String, Job>()  // 중복 방지용
 
     init {
         serviceScope.launch {
@@ -91,6 +94,8 @@ class OSCQueryService(
             if (oscPort != DEFAULT_PORT_OSC) {
                 advertiseOSCService(serverName, oscPort)
             }
+            // refreshServices는 advertise가 완료된 후 실행
+            delay(500)  // 안정화 대기
             refreshServices()
         }
     }
@@ -153,20 +158,42 @@ class OSCQueryService(
     }
 
     fun advertiseOSCQueryService(serviceName: String, port: Int = -1) {
-        serviceScope.launch {
+        // 이미 진행 중인 작업이 있으면 취소
+        advertiseJobs["oscquery:$serviceName"]?.cancel()
+
+        advertiseJobs["oscquery:$serviceName"] = serviceScope.launch {
             val actualPort = withContext(Dispatchers.IO) {
                 if (port < 0) Extensions.getAvailableTcpPort() else port
             }
-            discovery.advertise(OSCQueryServiceProfile(serviceName, hostIP, actualPort, OSCQueryServiceProfile.ServiceType.OSCQuery))
+            Log.d(TAG, "Advertising OSCQuery service: $serviceName on port $actualPort")
+            discovery.advertise(
+                OSCQueryServiceProfile(
+                    serviceName,
+                    hostIP,
+                    actualPort,
+                    OSCQueryServiceProfile.ServiceType.OSCQuery
+                )
+            )
         }
     }
 
     fun advertiseOSCService(serviceName: String, port: Int = -1) {
-        serviceScope.launch {
+        // 이미 진행 중인 작업이 있으면 취소
+        advertiseJobs["osc:$serviceName"]?.cancel()
+
+        advertiseJobs["osc:$serviceName"] = serviceScope.launch {
             val actualPort = withContext(Dispatchers.IO) {
                 if (port < 0) Extensions.getAvailableUdpPort() else port
             }
-            discovery.advertise(OSCQueryServiceProfile(serviceName, oscIP, actualPort, OSCQueryServiceProfile.ServiceType.OSC))
+            Log.d(TAG, "Advertising OSC service: $serviceName on port $actualPort")
+            discovery.advertise(
+                OSCQueryServiceProfile(
+                    serviceName,
+                    oscIP,
+                    actualPort,
+                    OSCQueryServiceProfile.ServiceType.OSC
+                )
+            )
         }
     }
 
