@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -210,15 +211,37 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
     private suspend fun resolveServiceSuspend(service: NsdServiceInfo): NsdServiceInfo =
         suspendCancellableCoroutine { continuation ->
-            nsdManager.resolveService(service, object : NsdManager.ResolveListener {
+            val resumed = AtomicBoolean(false)
+
+            val listener = object : NsdManager.ResolveListener {
                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                    continuation.resumeWithException(IOException("Resolve failed with error code: $errorCode"))
+                    if (resumed.compareAndSet(false, true)) {
+                        continuation.resumeWithException(
+                            IOException("Resolve failed with error code: $errorCode")
+                        )
+                    }
                 }
 
                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                    continuation.resume(serviceInfo)
+                    if (resumed.compareAndSet(false, true)) {
+                        continuation.resume(serviceInfo)
+                    }
                 }
-            })
+            }
+
+            continuation.invokeOnCancellation {
+                if (resumed.compareAndSet(false, true)) {
+                    Log.d(TAG, "Resolve cancelled for: ${service.serviceName}")
+                }
+            }
+
+            try {
+                nsdManager.resolveService(service, listener)
+            } catch (e: Exception) {
+                if (resumed.compareAndSet(false, true)) {
+                    continuation.resumeWithException(e)
+                }
+            }
         }
 
     private fun addMatchedService(serviceInfo: NsdServiceInfo) {
@@ -339,6 +362,12 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
     override fun advertise(profile: OSCQueryServiceProfile) {
         coroutineScope.launch {
+            // 이미 등록된 서비스인지 확인
+            if (advertisedServices.containsKey(profile)) {
+                Log.w(TAG, "Service already advertised: ${profile.name}")
+                return@launch
+            }
+
             val serviceInfo = NsdServiceInfo().apply {
                 serviceName = profile.name
                 serviceType = when (profile.serviceType) {
@@ -365,25 +394,61 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
     private suspend fun registerServiceSuspend(serviceInfo: NsdServiceInfo) =
         suspendCancellableCoroutine { continuation ->
-            nsdManager.registerService(
-                serviceInfo,
-                NsdManager.PROTOCOL_DNS_SD,
-                object : NsdManager.RegistrationListener {
-                    override fun onServiceRegistered(registeredService: NsdServiceInfo) {
+            val resumed = AtomicBoolean(false)  // 중복 resume 방지
+
+            val listener = object : NsdManager.RegistrationListener {
+                override fun onServiceRegistered(registeredService: NsdServiceInfo) {
+                    if (resumed.compareAndSet(false, true)) {
+                        Log.d(TAG, "Service registered successfully: ${registeredService.serviceName}")
                         continuation.resume(Unit)
+                    } else {
+                        Log.w(TAG, "onServiceRegistered called but already resumed: ${registeredService.serviceName}")
                     }
+                }
 
-                    override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                        continuation.resumeWithException(IOException("Registration failed with error code: $errorCode"))
+                override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    if (resumed.compareAndSet(false, true)) {
+                        Log.e(TAG, "Registration failed: ${serviceInfo.serviceName}, errorCode: $errorCode")
+                        continuation.resumeWithException(
+                            IOException("Registration failed with error code: $errorCode")
+                        )
+                    } else {
+                        Log.w(TAG, "onRegistrationFailed called but already resumed: ${serviceInfo.serviceName}")
                     }
+                }
 
-                    override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {}
-                    override fun onUnregistrationFailed(
-                        serviceInfo: NsdServiceInfo,
-                        errorCode: Int
-                    ) {
+                override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
+                    Log.d(TAG, "onServiceUnregistered: ${serviceInfo.serviceName}")
+                }
+
+                override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    Log.e(TAG, "onUnregistrationFailed: ${serviceInfo.serviceName}, errorCode: $errorCode")
+                }
+            }
+
+            // Cancellation 처리
+            continuation.invokeOnCancellation {
+                try {
+                    if (resumed.compareAndSet(false, true)) {
+                        Log.d(TAG, "Registration cancelled for: ${serviceInfo.serviceName}")
+                        nsdManager.unregisterService(listener)
                     }
-                })
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during cancellation cleanup: ${e.message}")
+                }
+            }
+
+            try {
+                nsdManager.registerService(
+                    serviceInfo,
+                    NsdManager.PROTOCOL_DNS_SD,
+                    listener
+                )
+            } catch (e: Exception) {
+                if (resumed.compareAndSet(false, true)) {
+                    continuation.resumeWithException(e)
+                }
+            }
         }
 
     override fun getOSCQueryServices(): Set<OSCQueryServiceProfile> = oscQueryServices.toSet()
@@ -409,18 +474,42 @@ class MeaModDiscovery(private val context: Context) : IDiscovery {
 
     private suspend fun unregisterServiceSuspend(serviceInfo: NsdServiceInfo) =
         suspendCancellableCoroutine { continuation ->
-            nsdManager.unregisterService(object : NsdManager.RegistrationListener {
+            val resumed = AtomicBoolean(false)
+
+            val listener = object : NsdManager.RegistrationListener {
                 override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
-                    continuation.resume(Unit)
+                    if (resumed.compareAndSet(false, true)) {
+                        Log.d(TAG, "Service unregistered successfully: ${serviceInfo.serviceName}")
+                        continuation.resume(Unit)
+                    }
                 }
 
                 override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                    continuation.resumeWithException(IOException("Unregistration failed with error code: $errorCode"))
+                    if (resumed.compareAndSet(false, true)) {
+                        Log.e(TAG, "Unregistration failed: ${serviceInfo.serviceName}, errorCode: $errorCode")
+                        continuation.resumeWithException(
+                            IOException("Unregistration failed with error code: $errorCode")
+                        )
+                    }
                 }
 
                 override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {}
                 override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
-            })
+            }
+
+            continuation.invokeOnCancellation {
+                if (resumed.compareAndSet(false, true)) {
+                    Log.d(TAG, "Unregistration cancelled for: ${serviceInfo.serviceName}")
+                }
+            }
+
+            try {
+                nsdManager.unregisterService(listener)
+            } catch (e: Exception) {
+                if (resumed.compareAndSet(false, true)) {
+                    continuation.resumeWithException(e)
+                }
+            }
         }
 
     override fun close() = runBlocking {
